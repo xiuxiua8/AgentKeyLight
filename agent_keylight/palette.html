@@ -133,6 +133,27 @@
   .message.ok { color: var(--ok); }
   .fatal { max-width: 640px; margin: 80px auto; text-align: center; color: var(--muted); }
   .fatal code { color: var(--text); }
+  .key, .tab, .side > span, .segmented button, .bar .btn { white-space: nowrap; }
+  .grid > * { min-width: 0; }
+  .pair { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .side, .now, header { flex-wrap: wrap; }
+  input[type="range"] { max-width: 100%; }
+
+  @media (max-width: 640px) {
+    main { padding: 20px 16px 150px; }
+    header { gap: 12px; }
+    .card { padding: 16px; }
+    .tabs { flex-wrap: wrap; }
+    .tab { flex: 1 1 40%; }
+    .grid { grid-template-columns: 1fr; gap: 6px; }
+    .grid > label { margin-top: 10px; }
+    .grid > span:empty { display: none; }
+    .pair.slider { flex: 1 1 100%; }
+    .pair.slider input[type="range"] { flex: 1; min-width: 0; }
+    .bar-inner { flex-wrap: wrap; padding: 12px 16px; }
+    .bar .path { flex-basis: 100%; }
+    .bar .message { flex: 1; }
+  }
 </style>
 </head>
 <body>
@@ -172,12 +193,11 @@
         <span class="hint" id="background-hint">动画的暗部，调暗可以让闪烁更醒目</span>
       </div>
       <label for="speed">速度</label>
-      <div class="row"><input type="range" id="speed" min="0" max="1000" step="1"><span class="value" id="speed-value"></span></div>
+      <div class="row"><span class="pair slider"><input type="range" id="speed" min="0" max="1000" step="1"><span class="value" id="speed-value"></span></span></div>
       <span></span>
       <div class="row">
         <button class="btn" id="preview">在键盘上预览</button>
-        <span class="hint">预览来源</span>
-        <div class="segmented" id="preview-source"></div>
+        <span class="pair"><span class="hint">预览来源</span><div class="segmented" id="preview-source"></div></span>
       </div>
     </div>
   </section>
@@ -185,19 +205,33 @@
   <section class="card">
     <h2>通用设置</h2>
     <div class="grid">
-      <label for="source-enabled">底行来源色</label>
+      <label for="source-enabled">来源色</label>
       <div class="row">
         <label class="switch"><input type="checkbox" id="source-enabled"><span></span></label>
         <span class="color-field"><span class="hint">Claude Code</span><input type="color" id="source-claude" aria-label="Claude Code 来源色"><input type="text" class="hex" id="source-claude-text" spellcheck="false"></span>
         <span class="color-field"><span class="hint">Codex</span><input type="color" id="source-codex" aria-label="Codex 来源色"><input type="text" class="hex" id="source-codex-text" spellcheck="false"></span>
       </div>
+      <label id="source-area-label">显示位置</label>
+      <div class="row">
+        <div class="segmented" id="source-area" role="group" aria-labelledby="source-area-label">
+          <button data-key="ring">外圈</button><button data-key="bowl">碗状</button><button data-key="bottom">底行</button>
+        </div>
+        <span class="hint" id="source-area-hint"></span>
+      </div>
+      <label id="source-style-label">样式</label>
+      <div class="row">
+        <div class="segmented" id="source-style" role="group" aria-labelledby="source-style-label">
+          <button data-key="solid">静态</button><button data-key="breathe">呼吸</button><button data-key="chase">滚动</button>
+        </div>
+        <span class="pair slider"><input type="range" id="source-speed" min="0" max="1000" step="1" aria-label="速度"><span class="value" id="source-speed-value"></span></span>
+      </div>
       <label for="completed-seconds">保持时间</label>
       <div class="row">
-        <span class="hint">完成</span><input type="number" id="completed-seconds" min="1" max="600"><span class="hint">秒</span>
-        <span class="hint" style="margin-left: 12px">出错或中断</span><input type="number" id="error-seconds" min="1" max="600"><span class="hint">秒</span>
+        <span class="pair"><span class="hint">完成</span><input type="number" id="completed-seconds" min="1" max="600"><span class="hint">秒</span></span>
+        <span class="pair"><span class="hint">出错或中断</span><input type="number" id="error-seconds" min="1" max="600"><span class="hint">秒</span></span>
       </div>
       <label for="brightness">整体亮度</label>
-      <div class="row"><input type="range" id="brightness" min="10" max="100" step="1"><span class="value" id="brightness-value"></span><span class="hint">还会乘以键盘自身的背光亮度</span></div>
+      <div class="row"><span class="pair slider"><input type="range" id="brightness" min="10" max="100" step="1"><span class="value" id="brightness-value"></span></span><span class="hint">还会乘以键盘自身的背光亮度</span></div>
       <label for="color-correction">颜色校正</label>
       <div class="row">
         <label class="switch"><input type="checkbox" id="color-correction"><span></span></label>
@@ -296,6 +330,10 @@ function buildBoard() {
       el.style.top = `${el.dataset.y * unit + gap / 2}px`;
       el.style.width = `${el.dataset.w * unit - gap}px`;
       el.style.height = `${unit - gap}px`;
+      // Corners, labels and padding follow the key size so small windows stay tidy.
+      el.style.borderRadius = `${Math.max(3, unit * 0.13)}px`;
+      el.style.fontSize = `${Math.max(7, Math.min(11, unit * 0.19))}px`;
+      el.style.padding = `0 0 ${unit * 0.1}px ${unit * 0.12}px`;
     }
   };
   new ResizeObserver(place).observe(board);
@@ -405,6 +443,20 @@ function fillEditor() {
   $("speed-value").textContent = `${look.speed.toFixed(1)}×`;
 }
 
+const AREA_HINTS = {
+  ring: "顶行、底行和两侧各 3 个键，状态动画在中间的键上",
+  bowl: "esc、delete、两侧各 3 个键和底行，1 到 = 与中间的键显示状态动画",
+  bottom: "底行 8 个键，其余按键显示状态动画",
+};
+
+function markSegmented(id, value) {
+  for (const button of $(id).children) {
+    const on = button.dataset.key === value;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+
 function fillGeneral() {
   const source = draft.source;
   $("source-enabled").checked = source.enabled;
@@ -413,6 +465,13 @@ function fillGeneral() {
     $(`source-${name}-text`).value = source[name];
     $(`source-${name}-text`).classList.remove("invalid");
   }
+  markSegmented("source-area", source.area);
+  $("source-area-hint").textContent = AREA_HINTS[source.area] || "";
+  markSegmented("source-style", source.style);
+  $("source-speed").value = speedToSlider(source.speed);
+  const moving = source.style !== "solid";
+  $("source-speed").disabled = !moving;
+  $("source-speed-value").textContent = moving ? `${source.speed.toFixed(1)}×` : "";
   $("completed-seconds").value = draft.general.completed_seconds;
   $("error-seconds").value = draft.general.error_seconds;
   $("brightness").value = Math.round(draft.general.brightness * 100);
@@ -510,6 +569,20 @@ function bindEditor() {
 function bindGeneral() {
   $("source-enabled").addEventListener("change", () => {
     draft.source.enabled = $("source-enabled").checked;
+    changed();
+  });
+  for (const [id, key] of [["source-area", "area"], ["source-style", "style"]]) {
+    for (const button of $(id).children) {
+      button.addEventListener("click", () => {
+        draft.source[key] = button.dataset.key;
+        fillGeneral();
+        changed();
+      });
+    }
+  }
+  $("source-speed").addEventListener("input", () => {
+    draft.source.speed = sliderToSpeed(Number($("source-speed").value));
+    $("source-speed-value").textContent = `${draft.source.speed.toFixed(1)}×`;
     changed();
   });
   for (const name of ["claude", "codex"]) {

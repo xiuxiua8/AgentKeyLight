@@ -18,8 +18,18 @@ from pathlib import Path
 from . import config as settings
 from .config import Config, ConfigError
 from .device import FRAME_BYTES, MODES, DeviceError, Keyboard
-from .effects import Color, Frame, Look, mix, parse_color, render, to_light, to_screen
-from .layout import LED_COUNT, SOURCE_LEDS
+from .effects import (
+    Color,
+    Frame,
+    Look,
+    mix,
+    parse_color,
+    render,
+    source_levels,
+    to_light,
+    to_screen,
+)
+from .layout import EXTRA_LED, LED_COUNT, SOURCE_PATHS, SPACE
 from .state import IDLE, SESSIONS_DIR, Display, select
 
 CROSSFADE_SECONDS = 0.3
@@ -34,6 +44,9 @@ MIRROR_IDLE_AFTER = 2.0
 INFO_INTERVAL = 3.0
 LOG_PATH = Path.home() / "Library" / "Logs" / "AgentKeyLight.log"
 BLACK: Color = (0.0, 0.0, 0.0)
+# Source keys never go fully dark, so their color always tells the agent apart; in a
+# chase this dim agent color is the background the highlight runs over.
+SOURCE_FLOOR = 0.25
 
 
 def log(message: str) -> None:
@@ -62,6 +75,16 @@ def screen_colors(leds: bytes) -> list[str]:
         "#" + "".join(f"{round(to_screen(value / 255) * 255):02x}" for value in leds[i : i + 3])
         for i in range(0, len(leds), 3)
     ]
+
+
+def paint_source(frame: Frame, config: Config, source: str, elapsed: float) -> None:
+    """Show the agent's color on the configured keys, in the configured style."""
+    color = parse_color(config.source_colors[source])
+    path, closed = SOURCE_PATHS[config.source_area]
+    levels = source_levels(config.source_style, path, closed, config.source_speed, elapsed)
+    for index, level in zip(path, levels, strict=True):
+        frame[index] = mix(BLACK, color, SOURCE_FLOOR + (1 - SOURCE_FLOOR) * level)
+    frame[EXTRA_LED] = frame[SPACE]
 
 
 class Animator:
@@ -98,9 +121,7 @@ class Animator:
             return to_bytes(self._last, config)
         frame = render(look, now - self._started, display.count)
         if config.source_enabled and display.source in config.source_colors:
-            accent = parse_color(config.source_colors[display.source])
-            for index in SOURCE_LEDS:
-                frame[index] = accent
+            paint_source(frame, config, display.source, now - self._started)
         if self._fade_from is not None:
             progress = (now - self._fade_started) / CROSSFADE_SECONDS
             if progress < 1:

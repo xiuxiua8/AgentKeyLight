@@ -22,6 +22,8 @@ class ConfigTests(unittest.TestCase):
             self.assertIn("# AgentKeyLight 灯效设置", text)
             self.assertIn('effect = "comet"  # 流光', text)
             self.assertIn("color_correction = true", text)
+            self.assertIn('style = "breathe"', text)
+            self.assertIn('area = "bowl"', text)
 
     def test_missing_entries_keep_their_defaults(self):
         config = Config.from_dict({"waiting": {"color": "#AA00FF"}, "general": {"fps": 24}})
@@ -38,6 +40,13 @@ class ConfigTests(unittest.TestCase):
             "enabled 只能是 true 或 false": {"source": {"enabled": "yes"}},
             "color_correction 只能是 true 或 false": {"general": {"color_correction": 1}},
             "Codex 的来源色需要写成 #RRGGBB": {"source": {"codex": "white"}},
+            "来源色位置只能是 ring（外圈）、bowl（碗状）或 bottom（底行）": {
+                "source": {"area": "top"}
+            },
+            "来源色样式只能是 solid（静态）、breathe（呼吸）或 chase（滚动）": {
+                "source": {"style": "blink"}
+            },
+            "来源色速度需要在 0.2 到 4 之间": {"source": {"speed": 0}},
         }
         for message, value in cases.items():
             with self.subTest(message), self.assertRaises(ConfigError) as caught:

@@ -21,13 +21,15 @@ from agent_keylight.daemon import (
 )
 from agent_keylight.device import FRAME_BYTES, DeviceError, MainLight
 from agent_keylight.effects import Look, parse_color, render
-from agent_keylight.layout import BOTTOM_ROW, SOURCE_LEDS, SPACE
+from agent_keylight.layout import BOWL, RING, SOURCE_AREAS, SPACE
 from agent_keylight.state import IDLE, Display, Update, apply
 
 WORKING = Display("working", "claude", 1)
 SOLID = Look("solid", "#ff0000", "#000000")
 # Uncorrected values keep the blending arithmetic easy to check.
 RAW = Config(color_correction=False)
+# The H key sits in the middle, outside both source areas, so it always shows the state.
+INNER = 34
 
 
 def led(frame: bytes, index: int) -> bytes:
@@ -80,16 +82,62 @@ class AnimatorTests(unittest.TestCase):
     def test_idle_sends_nothing(self):
         self.assertIsNone(Animator().frame(IDLE, None, Config(), 0.0))
 
-    def test_bottom_row_shows_the_source_color(self):
-        config = Config()
-        frame = Animator().frame(Display("working", "codex", 1), SOLID, config, 0.0)
-        for index in SOURCE_LEDS:
-            self.assertEqual(led(frame, index), b"\xff\xff\xff", index)
-        # The row above, and every other key, keeps the state's animation.
-        self.assertEqual(led(frame, 52), b"\xff\x00\x00")
-        self.assertEqual(led(frame, 0), b"\xff\x00\x00")
+    def test_the_bowl_shows_the_source_color_by_default(self):
+        frame = Animator().frame(Display("working", "codex", 1), SOLID, Config(), 0.0)
+        lit = {i for i in range(62) if led(frame, i) == b"\xff\xff\xff"}
+        self.assertEqual(lit, set(SOURCE_AREAS["bowl"]))
+        # The number keys, 1 to =, show the state like every key inside the bowl.
+        self.assertTrue(all(led(frame, i) == b"\xff\x00\x00" for i in range(1, 13)))
+        inside = [i for i in range(61) if i not in BOWL]
+        self.assertEqual(len(inside), 45)
+        self.assertTrue(all(led(frame, i) == b"\xff\x00\x00" for i in inside))
         plain = Animator().frame(WORKING, SOLID, Config(source_enabled=False), 0.0)
-        self.assertTrue(all(led(plain, index) == b"\xff\x00\x00" for index in SOURCE_LEDS))
+        self.assertTrue(all(led(plain, i) == b"\xff\x00\x00" for i in range(62)))
+
+    def test_the_ring_can_show_the_source_instead(self):
+        frame = Animator().frame(
+            Display("working", "codex", 1), SOLID, Config(source_area="ring"), 0.0
+        )
+        lit = {i for i in range(62) if led(frame, i) == b"\xff\xff\xff"}
+        self.assertEqual(lit, set(SOURCE_AREAS["ring"]))
+        inside = [i for i in range(61) if i not in RING]
+        self.assertTrue(all(led(frame, i) == b"\xff\x00\x00" for i in inside))
+
+    def test_the_bottom_row_can_show_the_source_instead(self):
+        frame = Animator().frame(
+            Display("working", "codex", 1), SOLID, Config(source_area="bottom"), 0.0
+        )
+        lit = {i for i in range(62) if led(frame, i) == b"\xff\xff\xff"}
+        self.assertEqual(lit, set(SOURCE_AREAS["bottom"]))
+        self.assertEqual(led(frame, 0), b"\xff\x00\x00")
+
+    def test_chase_runs_a_highlight_over_a_dim_agent_color(self):
+        codex = Display("working", "codex", 1)
+        chase = Config(color_correction=False, source_area="bottom", source_style="chase")
+        animator = Animator()
+        start = animator.frame(codex, SOLID, chase, 0.0)
+        # The highlight starts on ctrl; the rest of the row is the dim background.
+        self.assertEqual(led(start, 53), b"\xff\xff\xff")
+        self.assertEqual({led(start, i) for i in range(54, 61)}, {bytes([64, 64, 64])})
+        later = animator.frame(codex, SOLID, chase, 3 / 7)
+        self.assertEqual(led(later, SPACE), b"\xff\xff\xff")
+        self.assertEqual(led(later, 61), led(later, SPACE))
+        self.assertGreater(led(later, 55)[0], led(later, 53)[0])
+
+    def test_source_keys_breathe_from_full_brightness(self):
+        codex = Display("working", "codex", 1)
+        animator = Animator()
+        levels = [led(animator.frame(codex, SOLID, RAW, t), SPACE)[0] for t in (0.0, 0.65, 1.3)]
+        self.assertEqual(levels, [255, 159, 64])
+        faster = Config(color_correction=False, source_speed=2.0)
+        animator = Animator()
+        animator.frame(codex, SOLID, faster, 0.0)
+        self.assertEqual(led(animator.frame(codex, SOLID, faster, 0.65), SPACE)[0], 64)
+        steady = Config(color_correction=False, source_style="solid")
+        animator = Animator()
+        self.assertEqual(
+            {led(animator.frame(codex, SOLID, steady, t), 53) for t in (0, 1.3)}, {b"\xff\xff\xff"}
+        )
 
     def test_screen_colors_are_converted_to_led_light(self):
         grey = [(0.5, 0.5, 0.5)]
@@ -101,25 +149,25 @@ class AnimatorTests(unittest.TestCase):
 
     def test_brightness_scales_every_led(self):
         frame = Animator().frame(WORKING, SOLID, Config(brightness=0.5), 0.0)
-        self.assertEqual(led(frame, 0), bytes([128, 0, 0]))
+        self.assertEqual(led(frame, INNER), bytes([128, 0, 0]))
 
     def test_state_changes_crossfade(self):
         animator = Animator()
         waiting = Display("waiting", "claude", 1)
         blue = Look("solid", "#0000ff", "#000000")
         animator.frame(WORKING, SOLID, RAW, 0.0)
-        self.assertEqual(led(animator.frame(waiting, blue, RAW, 1.0), 0), b"\xff\x00\x00")
+        self.assertEqual(led(animator.frame(waiting, blue, RAW, 1.0), INNER), b"\xff\x00\x00")
         middle = animator.frame(waiting, blue, RAW, 1.0 + CROSSFADE_SECONDS / 2)
-        self.assertTrue(near(led(middle, 0), [128, 0, 128]), led(middle, 0))
+        self.assertTrue(near(led(middle, INNER), [128, 0, 128]), led(middle, INNER))
         after = animator.frame(waiting, blue, RAW, 1.0 + CROSSFADE_SECONDS + 0.01)
-        self.assertEqual(led(after, 0), b"\x00\x00\xff")
+        self.assertEqual(led(after, INNER), b"\x00\x00\xff")
 
     def test_going_idle_fades_out_then_stops(self):
         animator = Animator()
         animator.frame(WORKING, SOLID, RAW, 0.0)
-        self.assertEqual(led(animator.frame(IDLE, None, RAW, 1.0), 0), b"\xff\x00\x00")
+        self.assertEqual(led(animator.frame(IDLE, None, RAW, 1.0), INNER), b"\xff\x00\x00")
         half = animator.frame(IDLE, None, RAW, 1.0 + FADE_OUT_SECONDS / 2)
-        self.assertTrue(near(led(half, 0), [128, 0, 0]), led(half, 0))
+        self.assertTrue(near(led(half, INNER), [128, 0, 0]), led(half, INNER))
         self.assertIsNone(animator.frame(IDLE, None, Config(), 1.0 + FADE_OUT_SECONDS + 0.01))
         self.assertIsNone(animator.frame(IDLE, None, Config(), 3.0))
 
@@ -133,7 +181,8 @@ class AnimatorTests(unittest.TestCase):
         later = 0.5 + CROSSFADE_SECONDS + 0.01
         frame = animator.frame(two, comet, Config(), later)
         expected = to_bytes(render(comet, later, 2), Config())
-        self.assertEqual(frame[: 3 * BOTTOM_ROW[0]], expected[: 3 * BOTTOM_ROW[0]])
+        inside = [i for i in range(61) if i not in BOWL]
+        self.assertEqual([led(frame, i) for i in inside], [led(expected, i) for i in inside])
 
     def test_new_colors_keep_the_animation_running(self):
         animator = Animator()
@@ -142,7 +191,7 @@ class AnimatorTests(unittest.TestCase):
         animator.frame(WORKING, recolored, Config(), 0.6)
         # 0.91 s into the flash cycle is a pause; a restarted cycle would be flashing.
         frame = animator.frame(WORKING, recolored, Config(), 0.6 + CROSSFADE_SECONDS + 0.01)
-        self.assertEqual(led(frame, 0), b"\x00\x00\x00")
+        self.assertEqual(led(frame, INNER), b"\x00\x00\x00")
 
 
 class KeyboardLinkTests(unittest.TestCase):
@@ -264,13 +313,20 @@ class ServeTests(unittest.TestCase):
         self.assertLess(times[-1], 1.0 + PREVIEW_SECONDS + FADE_OUT_SECONDS + 0.2)
         shown = [frame for t, frame in self.keyboard.frames if 1.5 < t < 1.0 + PREVIEW_SECONDS]
         amber = to_bytes([parse_color("#ffad00")], Config())
-        self.assertTrue(any(led(frame, 0) == amber for frame in shown))
-        self.assertTrue(
-            all(led(frame, i) == b"\xff\xff\xff" for frame in shown for i in SOURCE_LEDS)
-        )
+        self.assertTrue(any(led(frame, INNER) == amber for frame in shown))
+        # Codex's white bowl breathes: always grey-white, full at the peak, never dark.
+        bottom = [led(frame, i) for frame in shown for i in SOURCE_AREAS["bowl"]]
+        self.assertTrue(all(r == g == b for r, g, b in bottom))
+        self.assertEqual(max(r for r, _, _ in bottom), 255)
+        self.assertGreater(min(r for r, _, _ in bottom), 10)
+        self.assertLess(min(r for r, _, _ in bottom), 80)
 
     def test_preview_uses_unsaved_general_settings(self):
-        draft = Config(brightness=0.5, source_colors={"claude": "#ff7a1a", "codex": "#00ff00"})
+        draft = Config(
+            brightness=0.5,
+            source_style="solid",
+            source_colors={"claude": "#ff7a1a", "codex": "#00ff00"},
+        )
         self.events[1.0] = lambda: self.bridge.start_preview(
             "working", draft, "codex", self.clock.now
         )

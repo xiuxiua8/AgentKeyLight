@@ -21,6 +21,8 @@ STATE_LABELS = {
 }
 SOURCES = ("claude", "codex")
 SOURCE_LABELS = {"claude": "Claude Code", "codex": "Codex"}
+SOURCE_STYLES = {"solid": "静态", "breathe": "呼吸", "chase": "滚动"}
+SOURCE_AREAS = {"ring": "外圈", "bowl": "碗状", "bottom": "底行"}
 
 
 class ConfigError(ValueError):
@@ -45,6 +47,9 @@ class Config:
     fps: int = 30
     palette_port: int = 47631
     source_enabled: bool = True
+    source_area: str = "bowl"
+    source_style: str = "breathe"
+    source_speed: float = 1.0
     source_colors: dict[str, str] = field(
         default_factory=lambda: {"claude": "#ff7a1a", "codex": "#ffffff"}
     )
@@ -65,6 +70,12 @@ class Config:
             raise ConfigError("帧率需要在 10 到 60 之间")
         if not 1024 <= self.palette_port <= 65535:
             raise ConfigError("调色板端口需要在 1024 到 65535 之间")
+        if self.source_area not in SOURCE_AREAS:
+            raise ConfigError("来源色位置只能是 ring（外圈）、bowl（碗状）或 bottom（底行）")
+        if self.source_style not in SOURCE_STYLES:
+            raise ConfigError("来源色样式只能是 solid（静态）、breathe（呼吸）或 chase（滚动）")
+        if not 0.2 <= self.source_speed <= 4:
+            raise ConfigError("来源色速度需要在 0.2 到 4 之间")
         if set(self.source_colors) != set(SOURCES):
             raise ConfigError("需要为 Claude Code 和 Codex 各设置一种来源色")
         for name, value in self.source_colors.items():
@@ -81,7 +92,13 @@ class Config:
                 "fps": self.fps,
                 "palette_port": self.palette_port,
             },
-            "source": {"enabled": self.source_enabled, **self.source_colors},
+            "source": {
+                "enabled": self.source_enabled,
+                "area": self.source_area,
+                "style": self.source_style,
+                "speed": self.source_speed,
+                **self.source_colors,
+            },
             **{
                 state: {
                     "effect": look.effect,
@@ -126,6 +143,9 @@ class Config:
                 fps=int(general.get("fps", default.fps)),
                 palette_port=int(general.get("palette_port", default.palette_port)),
                 source_enabled=_boolean(source.get("enabled", default.source_enabled), "enabled"),
+                source_area=str(source.get("area", default.source_area)),
+                source_style=str(source.get("style", default.source_style)),
+                source_speed=float(source.get("speed", default.source_speed)),
                 source_colors={
                     name: str(source.get(name, default.source_colors[name])).lower()
                     for name in SOURCES
@@ -196,8 +216,11 @@ def render_toml(config: Config) -> str:
         f"palette_port = {config.palette_port}  # 网页调色板端口，只在本机开放",
         "",
         "[source]",
-        "# 显示灯效时，底行按键（ctrl 到 fn）常亮为发起任务的工具的颜色",
+        "# 显示灯效时，用一组按键的颜色表示发起任务的工具",
         f"enabled = {_boolean_toml(config.source_enabled)}",
+        f'area = "{config.source_area}"  # 位置：ring 外圈、bowl 碗状（外圈去掉 1 到 =）、bottom 底行',
+        f'style = "{config.source_style}"  # 样式：solid 静态、breathe 呼吸、chase 滚动',
+        f"speed = {_number(config.source_speed)}  # 呼吸或滚动的速度倍率，0.2 到 4",
     ]
     for name in SOURCES:
         lines.append(f'{name} = "{config.source_colors[name]}"  # {SOURCE_LABELS[name]}')

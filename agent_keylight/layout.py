@@ -59,6 +59,30 @@ LED_COUNT = 62
 LED_POSITIONS: tuple[tuple[float, float], ...] = tuple((key.cx, key.cy) for key in KEYS) + (
     (KEYS[SPACE].cx, KEYS[SPACE].cy),
 )
-BOTTOM_ROW: tuple[int, ...] = tuple(key.index for key in KEYS if key.y == ROW_Y[-1])
-# The bottom row, plus the LED that mirrors the space bar, shows which agent a status is for.
-SOURCE_LEDS: tuple[int, ...] = BOTTOM_ROW + (EXTRA_LED,)
+ROWS: tuple[tuple[int, ...], ...] = tuple(
+    tuple(key.index for key in KEYS if key.y == y) for y in ROW_Y
+)
+BOTTOM_ROW = ROWS[-1]
+_LEFT = tuple(row[0] for row in ROWS[1:-1])
+_RIGHT = tuple(row[-1] for row in ROWS[1:-1])
+# The outermost keys, clockwise from esc: the top row, down the right side, the bottom
+# row from right to left, and up the left side.
+RING_PATH: tuple[int, ...] = ROWS[0] + _RIGHT + tuple(reversed(BOTTOM_ROW)) + tuple(reversed(_LEFT))
+# The ring without 1 to =: from esc down the left side, along the bottom row, and up
+# the right side to delete, leaving the number keys to the state animation.
+BOWL_PATH: tuple[int, ...] = (
+    (ROWS[0][0],) + _LEFT + BOTTOM_ROW + tuple(reversed(_RIGHT)) + (ROWS[0][-1],)
+)
+RING = tuple(sorted(RING_PATH))
+BOWL = tuple(sorted(BOWL_PATH))
+# Where the agent's color can show, as a path for the chase to follow. A closed path
+# loops; an open one bounces between its ends. Every path includes the space bar, so
+# the LED that mirrors it lights along.
+SOURCE_PATHS: dict[str, tuple[tuple[int, ...], bool]] = {
+    "ring": (RING_PATH, True),
+    "bowl": (BOWL_PATH, False),
+    "bottom": (BOTTOM_ROW, False),
+}
+SOURCE_AREAS: dict[str, tuple[int, ...]] = {
+    name: tuple(sorted(path)) + (EXTRA_LED,) for name, (path, _closed) in SOURCE_PATHS.items()
+}

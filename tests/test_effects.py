@@ -1,14 +1,25 @@
 import math
 import unittest
 
-from agent_keylight.effects import EFFECTS, Look, parse_color, render, to_light, to_screen
+from agent_keylight.effects import (
+    EFFECTS,
+    Look,
+    parse_color,
+    render,
+    source_levels,
+    to_light,
+    to_screen,
+)
 from agent_keylight.layout import (
     BOTTOM_ROW,
+    BOWL,
     EXTRA_LED,
     KEYS,
     LED_COUNT,
     LED_POSITIONS,
-    SOURCE_LEDS,
+    RING,
+    SOURCE_AREAS,
+    SOURCE_PATHS,
     SPACE,
     WIDTH,
 )
@@ -33,11 +44,42 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(KEYS[SPACE].w, 6.5)
         self.assertEqual(LED_POSITIONS[EXTRA_LED], LED_POSITIONS[SPACE])
 
-    def test_source_color_covers_the_whole_bottom_row(self):
+    def test_source_areas(self):
         self.assertEqual(BOTTOM_ROW, tuple(range(53, 61)))
         labels = [KEYS[i].label for i in BOTTOM_ROW]
         self.assertEqual(labels, ["ctrl", "opt", "cmd", "", "cmd", "opt", "ctrl", "fn"])
-        self.assertEqual(SOURCE_LEDS, BOTTOM_ROW + (EXTRA_LED,))
+        # The ring: the whole top and bottom rows, and three keys on each side between them.
+        sides = [KEYS[i].label for i in RING if 14 <= i < 53]
+        self.assertEqual(sides, ["tab", "\\", "caps", "return", "shift", "shift"])
+        self.assertEqual(set(RING), set(range(14)) | set(BOTTOM_ROW) | {14, 27, 28, 40, 41, 52})
+        self.assertEqual(len(RING), 28)
+        # The bowl: the ring without 1 to =, so esc and delete are its rims.
+        self.assertEqual(set(BOWL), set(RING) - set(range(1, 13)))
+        self.assertEqual([KEYS[i].label for i in BOWL[:2]], ["esc", "delete"])
+        self.assertEqual(len(BOWL), 16)
+        self.assertEqual(SOURCE_AREAS["ring"], RING + (EXTRA_LED,))
+        self.assertEqual(SOURCE_AREAS["bowl"], BOWL + (EXTRA_LED,))
+        self.assertEqual(SOURCE_AREAS["bottom"], BOTTOM_ROW + (EXTRA_LED,))
+
+    def test_chase_paths_walk_each_area_key_by_key(self):
+        ring, closed = SOURCE_PATHS["ring"]
+        self.assertTrue(closed)
+        labels = [KEYS[i].label for i in ring]
+        self.assertEqual(
+            labels[:2] + labels[13:17], ["esc", "1", "delete", "\\", "return", "shift"]
+        )
+        self.assertEqual(labels[17:25], ["fn", "ctrl", "opt", "cmd", "", "cmd", "opt", "ctrl"])
+        self.assertEqual(labels[25:], ["shift", "caps", "tab"])
+        bowl, closed = SOURCE_PATHS["bowl"]
+        self.assertFalse(closed)
+        self.assertEqual(
+            [KEYS[i].label for i in (bowl[0], bowl[4], bowl[-5], bowl[-1])],
+            ["esc", "ctrl", "fn", "delete"],
+        )
+        self.assertEqual(SOURCE_PATHS["bottom"], (BOTTOM_ROW, False))
+        for name, (path, _closed) in SOURCE_PATHS.items():
+            self.assertEqual(len(set(path)), len(path), name)
+            self.assertEqual(SOURCE_AREAS[name], tuple(sorted(path)) + (EXTRA_LED,))
 
     def test_rows_span_the_keyboard_width(self):
         for row in sorted({key.y for key in KEYS}):
@@ -108,6 +150,30 @@ class EffectTests(unittest.TestCase):
         a = render(Look("rainbow", RED, DARK), 1.0)
         b = render(Look("rainbow", "#00ff00", "#000010"), 1.0)
         self.assertEqual(a, b)
+
+    def test_source_styles(self):
+        path, closed = SOURCE_PATHS["bowl"]
+        self.assertEqual(source_levels("solid", path, closed, 1, 3.3), [1.0] * 16)
+        breath = [source_levels("breathe", path, closed, 1, t)[5] for t in (0, 1.3, 2.6)]
+        self.assertEqual([round(v, 6) for v in breath], [1.0, 0.0, 1.0])
+
+    def test_chase_moves_a_highlight_with_a_trail(self):
+        path, closed = SOURCE_PATHS["bowl"]
+        # Only the first key is lit when the state begins: no trail from before.
+        self.assertEqual(source_levels("chase", path, closed, 1, 0.0), [1.0] + [0.0] * 15)
+        # A second later the highlight is 7 keys along, with a fading trail behind it.
+        levels = source_levels("chase", path, closed, 1, 1.0)
+        self.assertEqual(max(range(16), key=levels.__getitem__), 7)
+        self.assertTrue(levels[7] > levels[6] > levels[5] > levels[4])
+        self.assertEqual(levels[9:], [0.0] * 7)
+        # An open path bounces: after reaching delete the highlight heads back.
+        back = source_levels("chase", path, closed, 1, 20 / 7)
+        self.assertEqual(max(range(16), key=back.__getitem__), 10)
+        # A closed path wraps around; faster speed covers the path sooner.
+        ring, closed = SOURCE_PATHS["ring"]
+        around = source_levels("chase", ring, closed, 2, 30 / 14)
+        self.assertEqual(max(range(28), key=around.__getitem__), 2)
+        self.assertGreater(around[27], 0.1)
 
     def test_screen_and_light_conversions_invert_each_other(self):
         for value in (0.0, 0.02, 0.2, 0.5, 0.73, 1.0):

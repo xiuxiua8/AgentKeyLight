@@ -198,6 +198,45 @@ def rainbow(look: Look, elapsed: float, count: int) -> Frame:
     ]
 
 
+BREATH_SECONDS = 2.6
+CHASE_KEYS_PER_SECOND = 7.0
+CHASE_TRAIL_KEYS = 2.0
+CHASE_FRONT_KEYS = 0.6
+
+
+def source_levels(
+    style: str, path: tuple[int, ...], closed: bool, speed: float, elapsed: float
+) -> list[float]:
+    """How brightly each key along a source path shows the agent's color, 0..1.
+
+    solid holds full brightness, breathe pulses all keys together, and chase moves a
+    highlight along the path: around a closed path, back and forth along an open one.
+    A key glows most as the highlight reaches it and fades by how far the highlight
+    has moved on since, so the trail also stays smooth where the highlight turns back.
+    """
+    if style == "solid":
+        return [1.0] * len(path)
+    if style == "breathe":
+        wave = 0.5 + 0.5 * math.cos(2 * math.pi * elapsed * speed / BREATH_SECONDS)
+        return [wave] * len(path)
+    count = len(path)
+    if count < 2:
+        return [1.0] * count
+    length = count if closed else 2 * (count - 1)
+    travelled = elapsed * speed * CHASE_KEYS_PER_SECOND
+    head = travelled % length
+    levels = []
+    for index in range(count):
+        stops = (index,) if closed else (index, length - index)
+        # Only passes that happened since the state began leave a trail.
+        since = min(
+            (travelled - stop) % length if travelled >= stop else math.inf for stop in stops
+        )
+        until = min((stop - head) % length for stop in stops)
+        levels.append(max(math.exp(-since / CHASE_TRAIL_KEYS), 1 - until / CHASE_FRONT_KEYS))
+    return levels
+
+
 @dataclass(frozen=True)
 class Effect:
     label: str
