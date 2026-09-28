@@ -1,35 +1,98 @@
 import json
+import plistlib
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from agent_keylight.installer import _add_hooks
+from agent_keylight.installer import (
+    CLAUDE_EVENTS,
+    CODEX_EVENTS,
+    add_hooks,
+    launch_agent_definition,
+    remove_hooks,
+)
+
+COMMAND = "/tool emit codex"
 
 
 class InstallerTests(unittest.TestCase):
-    def test_adds_only_own_handler_and_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "hooks.json"
-            existing = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}
-            path.write_text(json.dumps(existing), encoding="utf-8")
-            with patch("agent_keylight.installer._hook_command", return_value="tool emit codex"):
-                self.assertTrue(_add_hooks(path, "codex", ("Stop", "Interrupt")))
-                self.assertFalse(_add_hooks(path, "codex", ("Stop", "Interrupt")))
-            value = json.loads(path.read_text(encoding="utf-8"))
-            handlers = [handler for group in value["hooks"]["Stop"] for handler in group["hooks"]]
-            self.assertEqual([x["command"] for x in handlers], ["other", "tool emit codex"])
-            self.assertIn("Interrupt", value["hooks"])
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / "hooks.json"
 
-    def test_codex_interrupt_and_session_end_use_supported_timeout(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "hooks.json"
-            with patch("agent_keylight.installer._hook_command", return_value="tool emit codex"):
-                _add_hooks(path, "codex", ("Interrupt", "SessionEnd", "Stop"))
-            hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
-            self.assertEqual(hooks["Interrupt"][0]["hooks"][0]["timeout"], 3)
-            self.assertEqual(hooks["SessionEnd"][0]["hooks"][0]["timeout"], 3)
-            self.assertEqual(hooks["Stop"][0]["hooks"][0]["timeout"], 5)
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def hooks(self) -> dict:
+        return json.loads(self.path.read_text(encoding="utf-8"))["hooks"]
+
+    def test_adds_only_own_groups_and_is_idempotent(self):
+        other = {"matcher": "", "hooks": [{"type": "command", "command": "other"}]}
+        self.path.write_text(
+            json.dumps({"hooks": {"Stop": [other]}, "theme": "dark"}), encoding="utf-8"
+        )
+        self.assertTrue(add_hooks(self.path, "codex", CODEX_EVENTS, COMMAND))
+        self.assertFalse(add_hooks(self.path, "codex", CODEX_EVENTS, COMMAND))
+        value = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(value["theme"], "dark")
+        self.assertEqual(value["hooks"]["Stop"][0], other)
+        self.assertEqual(set(value["hooks"]), set(CODEX_EVENTS))
+        backups = list(Path(self.temp.name).glob("hooks.json.agent-keylight-backup-*"))
+        self.assertEqual(len(backups), 1)
+
+    def test_question_hooks_use_matchers_and_codex_timeouts_fit_its_limits(self):
+        add_hooks(self.path, "codex", CODEX_EVENTS, COMMAND)
+        hooks = self.hooks()
+        self.assertEqual(
+            hooks["PreToolUse"],
+            [
+                {
+                    "matcher": "^request_user_input$",
+                    "hooks": [{"type": "command", "command": COMMAND, "timeout": 5}],
+                }
+            ],
+        )
+        self.assertEqual(hooks["Interrupt"][0]["hooks"][0]["timeout"], 3)
+        self.assertEqual(hooks["SessionEnd"][0]["hooks"][0]["timeout"], 3)
+        self.assertNotIn("matcher", hooks["Stop"][0])
+        self.assertEqual(CLAUDE_EVENTS["PreToolUse"], "AskUserQuestion|ExitPlanMode")
+
+    def test_upgrades_an_older_own_group_in_place(self):
+        old = {
+            "hooks": {
+                "PreToolUse": [{"hooks": [{"type": "command", "command": COMMAND, "timeout": 5}]}]
+            }
+        }
+        self.path.write_text(json.dumps(old), encoding="utf-8")
+        add_hooks(self.path, "codex", {"PreToolUse": "^request_user_input$"}, COMMAND)
+        self.assertEqual(self.hooks()["PreToolUse"][0]["matcher"], "^request_user_input$")
+        self.assertEqual(len(self.hooks()["PreToolUse"]), 1)
+
+    def test_leaves_a_group_shared_with_other_handlers_alone(self):
+        shared = {
+            "hooks": [
+                {"type": "command", "command": "other"},
+                {"type": "command", "command": COMMAND},
+            ]
+        }
+        self.path.write_text(json.dumps({"hooks": {"Stop": [shared]}}), encoding="utf-8")
+        add_hooks(self.path, "codex", {"Stop": None}, COMMAND)
+        self.assertEqual(self.hooks()["Stop"], [shared])
+
+    def test_remove_takes_out_only_this_program(self):
+        other = {"hooks": [{"type": "command", "command": "other"}]}
+        self.path.write_text(json.dumps({"hooks": {"Stop": [other]}}), encoding="utf-8")
+        add_hooks(self.path, "codex", CODEX_EVENTS, COMMAND)
+        self.assertTrue(remove_hooks(self.path, COMMAND))
+        self.assertEqual(self.hooks(), {"Stop": [other]})
+        self.assertFalse(remove_hooks(self.path, COMMAND))
+
+    def test_login_agent_runs_the_service_without_throttling(self):
+        definition = launch_agent_definition()
+        self.assertEqual(definition["ProgramArguments"][1:], ["serve"])
+        self.assertEqual(definition["ProcessType"], "Interactive")
+        self.assertTrue(definition["KeepAlive"])
+        plistlib.dumps(definition)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentKeyLight 调色板</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d0e12;
+    --panel: #16181e;
+    --panel-2: #1c1f27;
+    --line: #272b35;
+    --text: #e9ebf1;
+    --muted: #9ba2b2;
+    --faint: #6b7283;
+    --accent: #4d8dff;
+    --accent-hover: #6aa0ff;
+    --danger: #ff5a6a;
+    --ok: #3ccf7a;
+    --radius: 12px;
+    --keycap: #1b1d24;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 28px 112px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: 0.2px; }
+  .subtitle { margin: 4px 0 0; color: var(--muted); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; white-space: nowrap;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(60, 207, 122, 0.6); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
+  .warning {
+    display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px;
+    background: rgba(255, 173, 0, 0.1); border: 1px solid rgba(255, 173, 0, 0.35); color: #ffd27a;
+  }
+  .warning.show { display: block; }
+
+  .board-wrap { position: relative; }
+  .board { position: relative; width: 100%; }
+  .key {
+    position: absolute; display: flex; align-items: flex-end; justify-content: flex-start;
+    border-radius: 7px; background: var(--keycap); color: rgba(255, 255, 255, 0.55);
+    font-size: 11px; line-height: 1; padding: 0 0 6px 7px; overflow: hidden;
+    transition: background-color 90ms linear, box-shadow 90ms linear, color 90ms linear;
+  }
+  .side { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: var(--faint); font-size: 12px; }
+  .side-leds { display: flex; gap: 6px; }
+  .side-led { width: 18px; height: 6px; border-radius: 3px; background: var(--keycap); transition: background-color 90ms linear; }
+  .offline {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    font-size: 15px; color: var(--muted); background: rgba(13, 14, 18, 0.55); border-radius: 10px;
+  }
+  .offline.show { display: flex; }
+  .now { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; min-height: 32px; color: var(--muted); }
+  .now strong { color: var(--text); font-weight: 600; }
+
+  .tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel-2); border-radius: 10px; margin-bottom: 20px; }
+  .tab {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 10px;
+    border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; cursor: pointer;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+  .grid { display: grid; grid-template-columns: 96px 1fr; gap: 16px 16px; align-items: center; }
+  .grid > label { color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hint { color: var(--faint); font-size: 12.5px; }
+  select, input[type="text"], input[type="number"] {
+    height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel-2); color: var(--text); font: inherit; outline: none;
+  }
+  select { min-width: 180px; padding-right: 28px; }
+  select:focus, input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+  input[type="text"].hex { width: 96px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+  input.invalid { border-color: var(--danger) !important; }
+  input[type="number"] { width: 76px; }
+  input[type="color"] {
+    width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 8px;
+    background: none; cursor: pointer;
+  }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+  input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+  input[type="color"]:disabled, input[type="text"]:disabled { opacity: 0.4; cursor: not-allowed; }
+  .color-field { display: inline-flex; align-items: center; gap: 8px; }
+  input[type="range"] { width: 260px; accent-color: var(--accent); }
+  .value { min-width: 48px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  button.btn {
+    height: 34px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  button.btn:hover:not(:disabled) { border-color: #3a4050; }
+  button.btn:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  button.link { border: 0; background: none; color: var(--accent); padding: 0; height: auto; font: inherit; cursor: pointer; }
+
+  .segmented { display: inline-flex; padding: 3px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+  .segmented button { border: 0; background: none; color: var(--muted); font: inherit; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+  .segmented button.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+
+  .switch { position: relative; width: 40px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: #353a47; cursor: pointer; transition: background 120ms; }
+  .switch span::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; transition: transform 120ms;
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
+
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--line);
+    background: rgba(13, 14, 18, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .bar-inner { max-width: 980px; margin: 0 auto; padding: 14px 28px; display: flex; align-items: center; gap: 12px; }
+  .bar .path { flex: 1; min-width: 0; color: var(--faint); font: 12px ui-monospace, "SF Mono", Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message { color: var(--muted); white-space: nowrap; }
+  .message.error { color: var(--danger); }
+  .message.ok { color: var(--ok); }
+  .fatal { max-width: 640px; margin: 80px auto; text-align: center; color: var(--muted); }
+  .fatal code { color: var(--text); }
+</style>
+</head>
+<body>
+<main id="app" hidden>
+  <header>
+    <div>
+      <h1>AgentKeyLight 调色板</h1>
+      <p class="subtitle">调整 Codex 与 Claude Code 各状态在 Air60 HE 上的灯效。改动会立即在键盘上预览，保存后生效。</p>
+    </div>
+    <div class="pill" id="device"><span class="dot"></span><span>正在连接…</span></div>
+  </header>
+
+  <div class="warning" id="dim-warning">当前模式的背光亮度为 0，键盘上看不到灯效。请用键盘快捷键或 NuPhyIO 调高背光亮度。</div>
+
+  <section class="card">
+    <div class="board-wrap">
+      <div class="board" id="board"></div>
+      <div class="offline" id="offline">键盘未连接</div>
+    </div>
+    <div class="side"><span>侧灯</span><div class="side-leds" id="side"></div><span>由键盘自身灯效控制</span></div>
+    <div class="now" id="now"></div>
+  </section>
+
+  <section class="card">
+    <div class="tabs" id="tabs" role="tablist" aria-label="状态"></div>
+    <div class="grid">
+      <label for="effect">动画</label>
+      <div class="row"><select id="effect"></select><span class="hint" id="effect-hint"></span></div>
+      <label for="color-text">主色</label>
+      <div class="row">
+        <span class="color-field"><input type="color" id="color" aria-label="主色"><input type="text" class="hex" id="color-text" spellcheck="false"></span>
+        <span class="hint" id="color-hint"></span>
+      </div>
+      <label for="background-text">背景色</label>
+      <div class="row">
+        <span class="color-field"><input type="color" id="background" aria-label="背景色"><input type="text" class="hex" id="background-text" spellcheck="false"></span>
+        <span class="hint" id="background-hint">动画的暗部，调暗可以让闪烁更醒目</span>
+      </div>
+      <label for="speed">速度</label>
+      <div class="row"><input type="range" id="speed" min="0" max="1000" step="1"><span class="value" id="speed-value"></span></div>
+      <span></span>
+      <div class="row">
+        <button class="btn" id="preview">在键盘上预览</button>
+        <span class="hint">预览来源</span>
+        <div class="segmented" id="preview-source"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>通用设置</h2>
+    <div class="grid">
+      <label for="source-enabled">底行来源色</label>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="source-enabled"><span></span></label>
+        <span class="color-field"><span class="hint">Claude Code</span><input type="color" id="source-claude" aria-label="Claude Code 来源色"><input type="text" class="hex" id="source-claude-text" spellcheck="false"></span>
+        <span class="color-field"><span class="hint">Codex</span><input type="color" id="source-codex" aria-label="Codex 来源色"><input type="text" class="hex" id="source-codex-text" spellcheck="false"></span>
+      </div>
+      <label for="completed-seconds">保持时间</label>
+      <div class="row">
+        <span class="hint">完成</span><input type="number" id="completed-seconds" min="1" max="600"><span class="hint">秒</span>
+        <span class="hint" style="margin-left: 12px">出错或中断</span><input type="number" id="error-seconds" min="1" max="600"><span class="hint">秒</span>
+      </div>
+      <label for="brightness">整体亮度</label>
+      <div class="row"><input type="range" id="brightness" min="10" max="100" step="1"><span class="value" id="brightness-value"></span><span class="hint">还会乘以键盘自身的背光亮度</span></div>
+      <label for="color-correction">颜色校正</label>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="color-correction"><span></span></label>
+        <span class="hint">开启时键盘按屏幕上看到的颜色发光；关闭时直接按数值点亮（与 NuPhyIO 相同），中间色会偏淡</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="bar" id="bar" hidden>
+  <div class="bar-inner">
+    <span class="path" id="path" title=""></span>
+    <span class="message" id="message"></span>
+    <button class="btn" id="reset">恢复默认</button>
+    <button class="btn" id="revert" disabled>撤销修改</button>
+    <button class="btn primary" id="save" disabled>保存</button>
+  </div>
+</div>
+
+<div class="fatal" id="fatal" hidden></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const HEX = /^#[0-9a-f]{6}$/;
+let info, saved, draft;
+let active = "working";
+let previewSource = "claude";
+let previewTimer = 0;
+const keyEls = [];
+const sideEls = [];
+
+async function request(path, body) {
+  const options = body === undefined ? {} : {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-AgentKeyLight": "1" },
+    body: JSON.stringify(body),
+  };
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+
+function setMessage(text, kind = "") {
+  const el = $("message");
+  el.textContent = text;
+  el.className = "message" + (kind ? " " + kind : "");
+}
+
+function dirty() {
+  return JSON.stringify(draft) !== JSON.stringify(saved);
+}
+
+function refreshBar() {
+  const changed = dirty();
+  $("save").disabled = !changed;
+  $("revert").disabled = !changed;
+  if (changed) setMessage("有未保存的修改");
+  else if ($("message").textContent === "有未保存的修改") setMessage("");
+}
+
+function speedToSlider(speed) {
+  return Math.round(1000 * Math.log(speed / 0.2) / Math.log(20));
+}
+function sliderToSpeed(value) {
+  return Math.round(0.2 * Math.pow(20, value / 1000) * 100) / 100;
+}
+
+function buildBoard() {
+  const board = $("board");
+  const { width, height, keys } = info.layout;
+  board.style.aspectRatio = `${width} / ${height}`;
+  for (const key of keys) {
+    const el = document.createElement("div");
+    el.className = "key";
+    el.textContent = key.label;
+    el.dataset.x = key.x;
+    el.dataset.y = key.y;
+    el.dataset.w = key.w;
+    board.appendChild(el);
+    keyEls[key.index] = el;
+  }
+  for (let i = 0; i < 10; i++) {
+    const el = document.createElement("div");
+    el.className = "side-led";
+    $("side").appendChild(el);
+    sideEls.push(el);
+  }
+  const place = () => {
+    const unit = board.clientWidth / width;
+    const gap = unit * 0.1;
+    for (const el of keyEls) {
+      el.style.left = `${el.dataset.x * unit + gap / 2}px`;
+      el.style.top = `${el.dataset.y * unit + gap / 2}px`;
+      el.style.width = `${el.dataset.w * unit - gap}px`;
+      el.style.height = `${unit - gap}px`;
+    }
+  };
+  new ResizeObserver(place).observe(board);
+  place();
+}
+
+function luminance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+}
+
+function paintBoard(live, offlineText = "键盘未连接") {
+  const leds = live.leds || [];
+  const online = live.connected && leds.length >= 72;
+  $("offline").textContent = offlineText;
+  $("offline").classList.toggle("show", live.connected === false);
+  keyEls.forEach((el, i) => {
+    const color = online ? leds[i] : "#000000";
+    const glow = online && color !== "#000000";
+    el.style.backgroundColor = glow ? color : "";
+    el.style.boxShadow = glow ? `0 0 14px ${color}66` : "";
+    el.style.color = luminance(color) > 0.55 ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.55)";
+  });
+  sideEls.forEach((el, i) => {
+    const color = online ? leds[62 + i] : "";
+    el.style.backgroundColor = color && color !== "#000000" ? color : "";
+  });
+}
+
+function label(list, key) {
+  const item = list.find((entry) => entry.key === key);
+  return item ? item.label : key;
+}
+
+function paintStatus(live) {
+  const device = $("device");
+  if (live.connected === null) {
+    device.innerHTML = `<span class="dot"></span><span>正在连接…</span>`;
+  } else if (live.connected) {
+    const bright = live.brightness === null || live.brightness === undefined ? "" : ` · 背光 ${live.brightness}%`;
+    const mode = { Gaming: "游戏", Windows: "Windows", Mac: "Mac" }[live.mode];
+    const where = mode ? ` · ${mode} 模式` : "";
+    device.innerHTML = `<span class="dot on"></span><span>键盘已连接${where}${bright}</span>`;
+  } else {
+    device.innerHTML = `<span class="dot"></span><span>键盘未连接</span>`;
+  }
+  $("dim-warning").classList.toggle("show", live.connected && live.brightness === 0);
+  const now = $("now");
+  if (live.preview) {
+    now.innerHTML = `<span>正在键盘上预览：<strong>${label(info.states, live.preview)}</strong>，8 秒内无改动会自动结束</span><button class="btn" id="stop-preview">停止预览</button>`;
+    $("stop-preview").onclick = stopPreview;
+  } else if (live.status && live.status !== "idle") {
+    now.innerHTML = `<span>当前显示：<strong>${label(info.states, live.status)}</strong> · ${label(info.sources, live.source)}</span>`;
+  } else {
+    now.innerHTML = `<span>当前没有任务需要显示，键盘显示你自己的灯效</span>`;
+  }
+}
+
+async function poll() {
+  try {
+    const live = await request("/api/live");
+    paintBoard(live);
+    paintStatus(live);
+  } catch (error) {
+    paintBoard({ connected: false }, "后台服务未响应");
+    $("device").innerHTML = `<span class="dot"></span><span>后台服务未响应</span>`;
+  }
+  setTimeout(poll, document.hidden ? 1000 : 100);
+}
+
+function buildTabs() {
+  const tabs = $("tabs");
+  tabs.innerHTML = "";
+  for (const state of info.states) {
+    const button = document.createElement("button");
+    button.className = "tab" + (state.key === active ? " active" : "");
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(state.key === active));
+    button.innerHTML = `<span class="swatch"></span><span>${state.label}</span>`;
+    button.querySelector(".swatch").style.background = draft[state.key].color;
+    button.onclick = () => {
+      active = state.key;
+      buildTabs();
+      fillEditor();
+      preview();
+    };
+    tabs.appendChild(button);
+  }
+}
+
+function fillEditor() {
+  const look = draft[active];
+  $("effect").value = look.effect;
+  const effect = info.effects.find((entry) => entry.key === look.effect);
+  $("effect-hint").textContent = effect ? effect.description : "";
+  const noColors = look.effect === "rainbow";
+  for (const name of ["color", "background"]) {
+    $(name).value = look[name];
+    $(name + "-text").value = look[name];
+    $(name + "-text").classList.remove("invalid");
+    $(name).disabled = noColors;
+    $(name + "-text").disabled = noColors;
+  }
+  $("color-hint").textContent = noColors ? "彩虹动画不使用主色和背景色" : "";
+  $("background-hint").hidden = noColors;
+  $("speed").value = speedToSlider(look.speed);
+  $("speed-value").textContent = `${look.speed.toFixed(1)}×`;
+}
+
+function fillGeneral() {
+  const source = draft.source;
+  $("source-enabled").checked = source.enabled;
+  for (const name of ["claude", "codex"]) {
+    $(`source-${name}`).value = source[name];
+    $(`source-${name}-text`).value = source[name];
+    $(`source-${name}-text`).classList.remove("invalid");
+  }
+  $("completed-seconds").value = draft.general.completed_seconds;
+  $("error-seconds").value = draft.general.error_seconds;
+  $("brightness").value = Math.round(draft.general.brightness * 100);
+  $("brightness-value").textContent = `${Math.round(draft.general.brightness * 100)}%`;
+  $("color-correction").checked = draft.general.color_correction;
+}
+
+function changed({ tabs = false } = {}) {
+  if (tabs) buildTabs();
+  refreshBar();
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(preview, 120);
+}
+
+async function preview() {
+  try {
+    await request("/api/preview", { state: active, config: draft, source: previewSource });
+  } catch (error) {
+    setMessage(error.message, "error");
+  }
+}
+
+async function stopPreview() {
+  try {
+    await request("/api/preview/stop", {});
+  } catch (error) {
+    setMessage(error.message, "error");
+  }
+}
+
+function bindColor(inputId, textId, read, write, options) {
+  const input = $(inputId);
+  const text = $(textId);
+  input.addEventListener("input", () => {
+    write(input.value);
+    text.value = input.value;
+    text.classList.remove("invalid");
+    changed(options);
+  });
+  const commit = () => {
+    const value = text.value.trim().toLowerCase();
+    const normalized = value.startsWith("#") ? value : "#" + value;
+    if (!HEX.test(normalized)) {
+      text.classList.add("invalid");
+      return;
+    }
+    text.classList.remove("invalid");
+    text.value = normalized;
+    input.value = normalized;
+    if (normalized !== read()) {
+      write(normalized);
+      changed(options);
+    }
+  };
+  text.addEventListener("change", commit);
+  text.addEventListener("keydown", (event) => { if (event.key === "Enter") commit(); });
+}
+
+function bindEditor() {
+  const select = $("effect");
+  for (const effect of info.effects) {
+    const option = document.createElement("option");
+    option.value = effect.key;
+    option.textContent = effect.label;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", () => {
+    draft[active].effect = select.value;
+    fillEditor();
+    changed();
+  });
+  bindColor("color", "color-text", () => draft[active].color, (v) => { draft[active].color = v; }, { tabs: true });
+  bindColor("background", "background-text", () => draft[active].background, (v) => { draft[active].background = v; });
+  $("speed").addEventListener("input", () => {
+    draft[active].speed = sliderToSpeed(Number($("speed").value));
+    $("speed-value").textContent = `${draft[active].speed.toFixed(1)}×`;
+    changed();
+  });
+  $("preview").onclick = preview;
+  const segmented = $("preview-source");
+  for (const source of info.sources) {
+    const button = document.createElement("button");
+    button.textContent = source.label;
+    button.dataset.key = source.key;
+    button.onclick = () => {
+      previewSource = source.key;
+      for (const el of segmented.children) el.classList.toggle("active", el.dataset.key === previewSource);
+      preview();
+    };
+    segmented.appendChild(button);
+  }
+  segmented.children[0].classList.add("active");
+}
+
+function bindGeneral() {
+  $("source-enabled").addEventListener("change", () => {
+    draft.source.enabled = $("source-enabled").checked;
+    changed();
+  });
+  for (const name of ["claude", "codex"]) {
+    bindColor(`source-${name}`, `source-${name}-text`, () => draft.source[name], (v) => { draft.source[name] = v; });
+  }
+  for (const [id, key] of [["completed-seconds", "completed_seconds"], ["error-seconds", "error_seconds"]]) {
+    $(id).addEventListener("change", () => {
+      const value = Math.round(Number($(id).value));
+      const valid = value >= 1 && value <= 600;
+      $(id).classList.toggle("invalid", !valid);
+      if (valid) {
+        draft.general[key] = value;
+        refreshBar();
+      }
+    });
+  }
+  $("brightness").addEventListener("input", () => {
+    draft.general.brightness = Number($("brightness").value) / 100;
+    $("brightness-value").textContent = `${$("brightness").value}%`;
+    changed();
+  });
+  $("color-correction").addEventListener("change", () => {
+    draft.general.color_correction = $("color-correction").checked;
+    changed();
+  });
+}
+
+function bindBar() {
+  $("save").onclick = async () => {
+    try {
+      const result = await request("/api/config", draft);
+      saved = clone(result.config);
+      draft = clone(result.config);
+      refreshBar();
+      setMessage("已保存，立即生效", "ok");
+    } catch (error) {
+      setMessage(error.message, "error");
+    }
+  };
+  $("revert").onclick = () => {
+    draft = clone(saved);
+    buildTabs();
+    fillEditor();
+    fillGeneral();
+    refreshBar();
+    preview();
+  };
+  $("reset").onclick = () => {
+    draft = clone(info.defaults);
+    draft.general.palette_port = saved.general.palette_port;
+    buildTabs();
+    fillEditor();
+    fillGeneral();
+    refreshBar();
+    preview();
+  };
+  window.addEventListener("beforeunload", (event) => {
+    if (dirty()) event.preventDefault();
+  });
+  window.addEventListener("pagehide", () => {
+    fetch("/api/preview/stop", {
+      method: "POST", keepalive: true, body: "{}",
+      headers: { "Content-Type": "application/json", "X-AgentKeyLight": "1" },
+    });
+  });
+}
+
+async function start() {
+  try {
+    info = await request("/api/info");
+  } catch (error) {
+    const fatal = $("fatal");
+    fatal.hidden = false;
+    fatal.innerHTML = "无法连接后台服务。请在终端运行 <code>agent-keylight doctor</code> 检查。";
+    return;
+  }
+  saved = clone(info.config);
+  draft = clone(info.config);
+  $("path").textContent = info.configPath;
+  $("path").title = info.configPath;
+  buildBoard();
+  bindEditor();
+  bindGeneral();
+  bindBar();
+  buildTabs();
+  fillEditor();
+  fillGeneral();
+  $("app").hidden = false;
+  $("bar").hidden = false;
+  poll();
+}
+
+start();
+</script>
+</body>
+</html>
