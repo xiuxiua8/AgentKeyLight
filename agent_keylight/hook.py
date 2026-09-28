@@ -6,7 +6,7 @@ import json
 import sys
 import time
 
-from .state import STATE_DIR, hook_status, write_event
+from .state import STATE_DIR, end_session, hook_status, write_event
 
 
 def run(source: str) -> None:
@@ -20,7 +20,10 @@ def run(source: str) -> None:
         status = hook_status(source, event)
         session_id = event.get("session_id")
         if status is not False and isinstance(session_id, str) and session_id:
-            write_event(source, session_id, status)
+            if event.get("hook_event_name") == "SessionEnd":
+                end_session(source, session_id)
+            else:
+                write_event(source, session_id, status)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # Hook status is advisory. Never fail or interrupt the coding agent.
         try:
@@ -30,3 +33,7 @@ def run(source: str) -> None:
                 stream.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {source}: {exc}\n")
         except OSError:
             pass
+    finally:
+        # Codex requires JSON stdout for Stop; an empty object is a no-op.
+        if source == "codex":
+            sys.stdout.write("{}\n")

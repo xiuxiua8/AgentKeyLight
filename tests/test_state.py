@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_keylight.state import choose_status, hook_status, write_event
+from agent_keylight.state import choose_status, end_session, hook_status, write_event
 
 
 class StateTests(unittest.TestCase):
@@ -25,6 +25,17 @@ class StateTests(unittest.TestCase):
             write_event("codex", "c1", "completed", directory, now=100)
             self.assertEqual(choose_status(directory, now=110, completed_hold=12)[0], "completed")
             self.assertEqual(choose_status(directory, now=113, completed_hold=12)[0], "idle")
+
+    def test_session_end_retains_short_terminal_flash(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            write_event("codex", "one-shot", "completed", directory, now=100)
+            end_session("codex", "one-shot", directory)
+            self.assertEqual(choose_status(directory, now=101)[0], "completed")
+            self.assertEqual(choose_status(directory, now=113)[0], "idle")
+            write_event("claude", "other", "working", directory, now=120)
+            end_session("claude", "other", directory)
+            self.assertEqual(choose_status(directory, now=121)[0], "idle")
 
     def test_hook_mapping(self):
         self.assertEqual(hook_status("codex", {"hook_event_name": "UserPromptSubmit"}), "working")

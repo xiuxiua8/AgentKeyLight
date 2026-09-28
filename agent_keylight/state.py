@@ -48,6 +48,18 @@ def write_event(
         temp.unlink(missing_ok=True)
 
 
+def end_session(source: str, session_id: str, directory: Path = STATE_DIR) -> None:
+    """Retain a terminal flash when a one-shot CLI session exits immediately."""
+    path = session_file(source, session_id, directory)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        path.unlink(missing_ok=True)
+        return
+    if not isinstance(data, dict) or data.get("status") not in {"completed", "error"}:
+        path.unlink(missing_ok=True)
+
+
 def hook_status(source: str, event: dict) -> str | None | bool:
     """False means ignore. None removes a session from the active set."""
     name = event.get("hook_event_name")
