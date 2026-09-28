@@ -1,0 +1,36 @@
+{
+  "poll_interval_seconds": 0.35,
+  "completed_hold_seconds": 12,
+  "error_hold_seconds": 20,
+  "stale_session_seconds": 21600,
+  "idle": {
+    "effect": "piano",
+    "color": "#ffbf00",
+    "brightness": 100,
+    "speed": 3
+  },
+  "working": {
+    "effect": "breath",
+    "color": "#2878ff",
+    "brightness": 75,
+    "speed": 3
+  },
+  "waiting": {
+    "effect": "breath",
+    "color": "#ffad00",
+    "brightness": 90,
+    "speed": 1
+  },
+  "completed": {
+    "effect": "static",
+    "color": "#00d15a",
+    "brightness": 75,
+    "speed": 3
+  },
+  "error": {
+    "effect": "breath",
+    "color": "#ff3048",
+    "brightness": 90,
+    "speed": 1
+  }
+}
